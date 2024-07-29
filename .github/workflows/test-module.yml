@@ -1,0 +1,65 @@
+name: 'Test Module'
+
+on:
+  push:
+    branches-ignore:
+      - 'dev'
+      - 'prod'
+    paths:
+      - 'modules/**'
+
+env:
+  TF_LOG: INFO
+  FASTLY_API_KEY: ${{ secrets.FASTLY_API_KEY }}
+
+jobs:
+  static-analysis:
+    name: 'Static Analysis'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.2
+
+      - name: terraform fmt
+        run: terraform fmt -check -recursive
+
+      - name: terraform init
+        run: |
+          cd modules/vcl_service
+          terraform init -backend=false -input=false
+
+      - name: terraform validate
+        run: |
+          cd modules/vcl_service
+          terraform validate
+
+      - name: Lint VCL
+        uses: ain/falco-github-action@v1
+        with:
+          subcommand: lint
+          options: '-vv'
+          target: modules/vcl_service/vcl/*.vcl
+
+  terraform-test:
+    name: 'Terraform Test'
+    runs-on: ubuntu-latest
+    needs: [static-analysis]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.2
+
+      - name: terraform test
+        run: |
+          cd modules/vcl_service
+          terraform init -backend=false -input=false
+          terraform test -verbose

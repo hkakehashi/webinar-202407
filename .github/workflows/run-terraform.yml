@@ -1,0 +1,76 @@
+name: 'Run Terraform'
+
+on:
+  pull_request:
+    branches: [dev, prod]
+  push:
+    branches: [dev, prod]
+
+env:
+  TF_LOG: INFO
+  FASTLY_API_KEY: ${{ secrets.FASTLY_API_KEY }}
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  BACKEND_ROLE_ARN: ${{ secrets.BACKEND_ROLE_ARN }}
+  BACKEND_BUCKET: ${{ secrets.BACKEND_BUCKET }}
+  BACKEND_DYNAMO_DB: ${{ secrets.BACKEND_DYNAMODB_TABLE }}
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  terraform:
+    name: 'Terraform'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: envs/${{ github.event_name == 'pull_request' && github.base_ref || github.ref_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get PR Info
+        uses: ./.github/actions/get-pr-info
+        id: get_pr_info
+
+      - name: Set Version Comment
+        if: steps.get_pr_info.outputs.pr_number
+        run: |
+          echo 'TF_VAR_version_comment<<EOF' >> $GITHUB_ENV
+          echo "PR#${{ steps.get_pr_info.outputs.pr_number }}: ${{ steps.get_pr_info.outputs.pr_title }}" >> $GITHUB_ENV
+          echo "${{ steps.get_pr_info.outputs.pr_url }}" >> $GITHUB_ENV
+          echo 'EOF' >> $GITHUB_ENV
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.9.2
+
+      - name: Terraform Format
+        id: fmt
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform Init
+        id: init
+        run: |
+          terraform init -input=false \
+            -backend-config="role_arn=$BACKEND_ROLE_ARN" \
+            -backend-config="bucket=$BACKEND_BUCKET" \
+            -backend-config="dynamodb_table=$BACKEND_DYNAMODB_TABLE"
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate
+
+      - name: Setup tfcmt
+        uses: shmokmt/actions-setup-tfcmt@v2
+
+      - name: Terraform Plan
+        id: plan
+        if: github.event_name == 'pull_request'
+        run: tfcmt plan -- terraform plan -lock=false
+
+      - name: Terraform Apply
+        id: apply
+        if: github.event_name == 'push'
+        run: tfcmt apply -- terraform apply -lock-timeout=30m -auto-approve

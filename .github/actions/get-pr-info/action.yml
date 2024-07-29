@@ -1,0 +1,46 @@
+name: 'Get PR Information'
+description: 'Gets the pull request number, title, and URL from the current context or associated commit'
+outputs:
+  pr_number:
+    description: 'The pull request number'
+    value: ${{ steps.get_pr_info.outputs.pr_number }}
+  pr_title:
+    description: 'The pull request title'
+    value: ${{ steps.get_pr_info.outputs.pr_title }}
+  pr_url:
+    description: 'The pull request URL'
+    value: ${{ steps.get_pr_info.outputs.pr_url }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Get Pull Request Information
+      uses: actions/github-script@v7
+      id: get_pr_info
+      with:
+        script: |
+          let prNumber, prTitle, prUrl;
+          if (context.payload.pull_request) {
+            prNumber = context.payload.pull_request.number;
+            prTitle = context.payload.pull_request.title;
+            prUrl = context.payload.pull_request.html_url;
+          } else {
+            // Try to get PR info from commit
+            const pr = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+            });
+            
+            if (pr.data && pr.data.length > 0) {
+              prNumber = pr.data[0].number;
+              prTitle = pr.data[0].title;
+              prUrl = pr.data[0].html_url;
+            } else {
+              core.setFailed('No associated pull request found.');
+              return;
+            }
+          }
+          core.setOutput('pr_number', prNumber.toString());
+          core.setOutput('pr_title', prTitle);
+          core.setOutput('pr_url', prUrl);
