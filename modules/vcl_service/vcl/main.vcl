@@ -1,6 +1,5 @@
 sub vcl_recv {
 #FASTLY recv
-  # comment for CI test
 
   # Normally, you should consider requests other than GET and HEAD to be uncacheable
   # (to this we add the special FASTLYPURGE method)
