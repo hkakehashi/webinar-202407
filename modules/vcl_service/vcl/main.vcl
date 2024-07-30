@@ -1,6 +1,7 @@
 sub vcl_recv {
 #FASTLY recv
 
+  set req.url = querystring.sort(req.url);
   # Normally, you should consider requests other than GET and HEAD to be uncacheable
   # (to this we add the special FASTLYPURGE method)
   if (req.method != "HEAD" && req.method != "GET" && req.method != "FASTLYPURGE") {
